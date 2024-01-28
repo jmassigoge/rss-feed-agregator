@@ -1,18 +1,38 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
 	"os"
 
+	"github/jmassigoge/rss-feed-agregator/internal/database"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
+
+type apiConfig struct {
+	DB *database.Queries
+}
 
 func main() {
 	godotenv.Load(".env")
 	port := os.Getenv("PORT")
+	if port == "" {
+		log.Fatal("PORT environment variable is not set")
+	}
+	dbURL := os.Getenv("DB_CONNECTION")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatal("Connection to database failed")
+	}
+	dbQueries := database.New(db)
+	apiCfg := apiConfig{
+		DB: dbQueries,
+	}
 	r := chi.NewRouter()
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"https://*", "http://*"},
@@ -23,11 +43,22 @@ func main() {
 		MaxAge:           300, // Maximum value not ignored by any of major browsers
 	}))
 	r.Use(middlewareLog)
-	apiRouter := chi.NewRouter()
-	apiRouter.Get("/readiness", handlerReadiness)
-	apiRouter.Get("/err", handlerError)
-	r.Mount("/v1", apiRouter)
 
+	v1Router := chi.NewRouter()
+	v1Router.Post("/users", apiCfg.handlerUsersCreate)
+	v1Router.Get("/users", apiCfg.middlewareAuth(apiCfg.handlerUsersGet))
+
+	v1Router.Post("/feeds", apiCfg.middlewareAuth(apiCfg.handlerFeedCreate))
+	v1Router.Get("/feeds", apiCfg.handlerFeedsGet)
+
+	v1Router.Post("/feeds_follows", apiCfg.middlewareAuth(apiCfg.handlerFeedFollowCreate))
+	v1Router.Get("/feeds_follows", apiCfg.middlewareAuth(apiCfg.handlerFeedFollowsGet))
+	v1Router.Delete("/feeds_follows", apiCfg.middlewareAuth(apiCfg.handlerFeedFollowDelete))
+
+	v1Router.Get("/readiness", handlerReadiness)
+	v1Router.Get("/err", handlerError)
+
+	r.Mount("/v1", v1Router)
 	srv := &http.Server{
 		Addr:    ":" + port,
 		Handler: r,
