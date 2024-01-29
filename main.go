@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github/jmassigoge/rss-feed-agregator/internal/database"
 
@@ -51,9 +52,9 @@ func main() {
 	v1Router.Post("/feeds", apiCfg.middlewareAuth(apiCfg.handlerFeedCreate))
 	v1Router.Get("/feeds", apiCfg.handlerFeedsGet)
 
-	v1Router.Post("/feeds_follows", apiCfg.middlewareAuth(apiCfg.handlerFeedFollowCreate))
-	v1Router.Get("/feeds_follows", apiCfg.middlewareAuth(apiCfg.handlerFeedFollowsGet))
-	v1Router.Delete("/feeds_follows", apiCfg.middlewareAuth(apiCfg.handlerFeedFollowDelete))
+	v1Router.Get("/feed_follows", apiCfg.middlewareAuth(apiCfg.handlerFeedFollowsGet))
+	v1Router.Post("/feed_follows", apiCfg.middlewareAuth(apiCfg.handlerFeedFollowCreate))
+	v1Router.Delete("/feed_follows/{feedFollowID}", apiCfg.middlewareAuth(apiCfg.handlerFeedFollowDelete))
 
 	v1Router.Get("/readiness", handlerReadiness)
 	v1Router.Get("/err", handlerError)
@@ -63,6 +64,12 @@ func main() {
 		Addr:    ":" + port,
 		Handler: r,
 	}
+
+	// scrape feeds
+	const collectionConcurrency = 10
+	const collectionInterval = time.Minute
+	go startScraping(dbQueries, collectionConcurrency, collectionInterval)
+
 	log.Printf("Serving on port: %s\n", port)
 	log.Fatal(srv.ListenAndServe())
 }
